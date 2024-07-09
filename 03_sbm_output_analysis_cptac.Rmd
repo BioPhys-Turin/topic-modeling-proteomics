@@ -1,0 +1,606 @@
+---
+title: "SBM output analysis: CPTAC (BRCA) data"
+author: "Anne-Claire Kroger, anne-claire.kroger@curie.fr"
+date: "2024-06-28"
+output: html_document
+---
+
+# Read the SBM output and do some first visualization of the results
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(reshape2)
+library(ggplot2)
+library(matrixStats)
+library(pheatmap)
+library(dplyr)
+library(networkD3)
+library(stringr)
+library(fossil)
+
+source("sbm_output_analysis_functions.R")
+```
+
+### Import published clustering information
+
+```{r}
+brca_cluster <- read.csv("data/input_brca_cptac/BRCA_meta_paper_clustering.csv")
+rownames(brca_cluster) <- brca_cluster$Sample.ID
+
+```
+
+## Single-omics hSBM
+
+### RNA 4k features
+
+Loading all the results from hSBM using the custom function. Results
+will be saved in the right structure in the specifiied folder names if
+using the python script (see script 02). 
+
+* folder_path - Path to the
+folder with saved results as specifified in the python script 02 
+* level - level of the SBM output to be loaded 
+* type - name used to save
+the "worddist" matrices in python, as the SBM algorithm doesn't do it in
+the save.data() function like the rest of the output 
+* omics_leyers - number of omics layers used in this analysis, default is 1
+
+```{r}
+#load data
+brca_rna_4k_l0 <- read_sbm_output(folder_path = "data/sbm_output_brca_cptac/brca_rna_tests_4k", level = 0, type = "brca_rna_4k")
+brca_rna_4k_l1 <- read_sbm_output(folder_path = "data/sbm_output_brca_cptac/brca_rna_tests_4k", 1, type = "brca_rna_4k")
+brca_rna_4k_l2 <- read_sbm_output(folder_path = "data/sbm_output_brca_cptac/brca_rna_tests_4k", 2, type = "brca_rna_4k")
+
+```
+
+The output object contains all relevant outoput for one level: 
+
+* clusters - The discrete assignment of samples to a cluster. On each
+increasing level of the calculated SBM model, the number of clusters
+decreases, level 0 has the lowest number of clusters, often matching the
+original number of samples 
+* topics - The discrete assignment of
+features to topics, also decreases in higher SBM levels. In a
+multi-omics nSBM model, there are different topics for each omics type.
+Careful, the name of the topics is just a simple numbering, meaning they
+are the same for each omics layer (make sure to add an additional
+identifier when working with topics of different layers together). 
+* todist - The probablity distribution for a sample to be characterized by
+a certain topic (different for each omics layer). This can be seen as a
+reduced dimension, with topics as the new lower dimension features 
+* worddist: The probability distribution for a feature to be part of a
+topic (different for each omics layer). Is the value for a feature
+higher the 0, it means that this feature is assigned to a specific
+topic. A feature only has a value for one topic, since they are
+exclusive.
+
+```{r}
+as.data.frame(brca_rna_4k_l0$summary)
+as.data.frame(brca_rna_4k_l1$summary)
+as.data.frame(brca_rna_4k_l2$summary)
+```
+
+Check out the cluster numbers through the summary list in each sbm
+object. Level 1 has 4 clusters which matches the expected number of
+clusters for the cancer type.
+
+We can visualize the results through a sankey plot for several levels or
+a barplot for one level. In both cases we directly compare the results
+to the previously published annotations
+
+```{r}
+#sankey plot l1 & l2
+
+brca_samp <- as.list(brca_cluster$Sample.ID)
+
+#using level 1 & 2 in this case
+l1 <- unlist(lapply(brca_samp, function(samp) {which(brca_rna_4k_l1$clust == samp, arr.ind = TRUE)[2]}))
+l2 <- unlist(lapply(brca_samp, function(samp) {which(brca_rna_4k_l2$clust == samp, arr.ind = TRUE)[2]}))
+
+#add the prviously published annotation "NMF.Cluster"
+df <- data.frame("level_2" = l2, "level_1" = l1, "brca_subgroup" = brca_cluster$NMF.Cluster, row.names = brca_cluster$Sample.ID)
+df_s <- get_sankey_input(df)
+p <- sankeyNetwork(Links = df_s$links, Nodes = df_s$nodes,
+                     Source = "IDsource", Target = "IDtarget",
+                     Value = "value", NodeID = "name", 
+                     sinksRight=FALSE)
+
+
+p
+
+```
+
+```{r}
+#barplot level 1
+
+df <- get_nsbmclust_df(brca_rna_4k_l1$clust, anno = brca_cluster, anno_samplecol = 1, anno_groupcol = 8)
+
+df$cluster <- rownames(df)
+df <- melt(df, id = "cluster")
+
+ggplot(df, aes(fill=variable, y=value, x=cluster)) + 
+    geom_bar(position="stack", stat="identity")
+
+```
+
+### Prot 2k feature
+
+```{r}
+#load data
+brca_prot_2k_l0 <- read_sbm_output(folder_path = "data/sbm_output_brca_cptac/brca_prot_tests_2k", 0, type = "brca_prot_2k")
+brca_prot_2k_l1 <- read_sbm_output(folder_path = "data/sbm_output_brca_cptac/brca_prot_tests_2k", 1, type = "brca_prot_2k")
+brca_prot_2k_l2 <- read_sbm_output(folder_path = "data/sbm_output_brca_cptac/brca_prot_tests_2k", 2, type = "brca_prot_2k")
+
+```
+
+```{r}
+as.data.frame(brca_prot_2k_l0$summary)
+as.data.frame(brca_prot_2k_l1$summary)
+as.data.frame(brca_prot_2k_l2$summary)
+```
+
+```{r}
+#sankey plot l1 & l2
+
+brca_samp <- as.list(brca_cluster$Sample.ID)
+
+#using level 1 & 2 in this case
+l1 <- unlist(lapply(brca_samp, function(samp) {which(brca_prot_2k_l1$clust == samp, arr.ind = TRUE)[2]}))
+l2 <- unlist(lapply(brca_samp, function(samp) {which(brca_prot_2k_l2$clust == samp, arr.ind = TRUE)[2]}))
+
+#add the prviously published annotation "NMF.Cluster"
+df <- data.frame("level_2" = l2, "level_1" = l1, "brca_subgroup" = brca_cluster$NMF.Cluster, row.names = brca_cluster$Sample.ID)
+df_s <- get_sankey_input(df)
+p <- sankeyNetwork(Links = df_s$links, Nodes = df_s$nodes,
+                     Source = "IDsource", Target = "IDtarget",
+                     Value = "value", NodeID = "name", 
+                     sinksRight=FALSE)
+
+
+p
+
+```
+
+```{r}
+#barplot level 1
+
+df <- get_nsbmclust_df(brca_prot_2k_l1$clust, anno = brca_cluster, anno_samplecol = 1, anno_groupcol = 8)
+
+df$cluster <- rownames(df)
+df <- melt(df, id = "cluster")
+
+ggplot(df, aes(fill=variable, y=value, x=cluster)) + 
+    geom_bar(position="stack", stat="identity")
+
+```
+
+### Phospho 8k features
+
+```{r}
+#load data
+brca_phos_8k_l0 <- read_sbm_output(folder_path = "data/sbm_output_brca_cptac/brca_phos_tests_8k", 0, type = "brca_phos_8k")
+brca_phos_8k_l1 <- read_sbm_output(folder_path = "data/sbm_output_brca_cptac/brca_phos_tests_8k", 1, type = "brca_phos_8k")
+brca_phos_8k_l2 <- read_sbm_output(folder_path = "data/sbm_output_brca_cptac/brca_phos_tests_8k", 2, type = "brca_phos_8k")
+brca_phos_8k_l3 <- read_sbm_output(folder_path = "data/sbm_output_brca_cptac/brca_phos_tests_8k", 3, type = "brca_phos_8k")
+
+```
+
+```{r}
+as.data.frame(brca_phos_8k_l0$summary)
+as.data.frame(brca_phos_8k_l1$summary)
+as.data.frame(brca_phos_8k_l2$summary)
+as.data.frame(brca_phos_8k_l3$summary)
+```
+
+```{r}
+#sankey plot l1 & l2
+
+brca_samp <- as.list(brca_cluster$Sample.ID)
+
+#using level 1 & 2 in this case
+l1 <- unlist(lapply(brca_samp, function(samp) {which(brca_phos_8k_l1$clust == samp, arr.ind = TRUE)[2]}))
+l2 <- unlist(lapply(brca_samp, function(samp) {which(brca_phos_8k_l2$clust == samp, arr.ind = TRUE)[2]}))
+l3 <- unlist(lapply(brca_samp, function(samp) {which(brca_phos_8k_l3$clust == samp, arr.ind = TRUE)[2]}))
+
+
+#add the prviously published annotation "NMF.Cluster"
+df <- data.frame("level_3" = l3, "level_2" = l2, "level_1" = l1, "brca_subgroup" = brca_cluster$NMF.Cluster, row.names = brca_cluster$Sample.ID)
+df_s <- get_sankey_input(df)
+p <- sankeyNetwork(Links = df_s$links, Nodes = df_s$nodes,
+                     Source = "IDsource", Target = "IDtarget",
+                     Value = "value", NodeID = "name", 
+                     sinksRight=FALSE)
+
+
+p
+
+```
+
+```{r}
+#barplot level 1
+
+df <- get_nsbmclust_df(brca_phos_8k_l1$clust, anno = brca_cluster, anno_samplecol = 1, anno_groupcol = 8)
+
+df$cluster <- rownames(df)
+df <- melt(df, id = "cluster")
+
+ggplot(df, aes(fill=variable, y=value, x=cluster)) + 
+    geom_bar(position="stack", stat="identity")
+
+
+```
+
+### Further analysis for any omics analysis level of interest
+
+(can also be copy and pasted under each analysis)
+
+```{r}
+#define omics type and matching level of interest
+loi <- brca_rna_4k_l1
+
+loi_name <- "hSBM l=1 brca rna 4k"
+```
+
+Calculate the rand index
+
+```{r}
+df <- get_nsbmclust_df(loi$clust, anno = brca_cluster, anno_samplecol = 1, anno_groupcol = 8)
+rand_index_sbmcluster(df)
+```
+
+Take a closer look at topics by using the analyse_topics function which
+calculates different normalisations for topic scores
+
+```{r}
+stats_loi <- analyse_topics(loi)
+
+```
+
+Check the centered topic values aka "importance" for each each topic
+using the SBM assigned clustering. Centered topic values per cluster are
+calculated according to this publication:
+<https://www.mdpi.com/2072-6694/16/7/1350>
+
+```{r}
+ggplot(stats_loi$info_centered, aes(x=cluster, y=value))+
+  geom_boxplot() +
+  geom_point(aes(group = factor(cluster), color=topic_length), show.legend = T, size = 2) +
+  labs(x="", y="Centered topic importance", title = paste("Results", loi_name)) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+Check correlation between centered topic importance and topic length, vs
+correlation when only using mean topic importance without centering by
+cluster.
+
+```{r}
+cluster <- unique(stats_loi$info_centered$cluster)
+
+
+for (cl in cluster) {
+  p <- ggplot(stats_loi$info_centered[stats_loi$info_centered$cluster==cl,], aes(x=value, y=topic_length)) +
+    geom_point() +
+    labs(x="Centered topic importance", y="Topic size", title = paste("Results",loi_name, cl)) +
+    geom_smooth(method='lm', formula= y~x) +
+    theme(plot.title = element_text(hjust = 0.5))
+  print(p)
+} 
+
+
+
+p <- ggplot(stats_loi$info_centered, aes(x=topic_mean_imp, y=topic_length)) +
+    geom_point() +
+    labs(x="Mean topic importance", y="Topic size", title = paste("Results", loi_name)) +
+    geom_smooth(method='lm', formula= y~x) +
+    theme(plot.title = element_text(hjust = 0.5))
+print(p)
+
+
+```
+
+Correlation value can also be simply calculated without visualization.
+
+```{r}
+topic_length_corr(stats_loi)
+```
+
+## Multi-omics nSBM
+
+### Medium size data, all 3 layers (4k RNA, 2k Prot, 8k Phos)
+
+Load multi-omics results, but specify the number of omics. The output
+has the same structure but with additional matrices for topics,
+topicdist and worddist for every omics layer. The clustering is the
+integratd result with only one clustering using all omics layers.
+
+```{r}
+#brca_medium_l0 <- read_sbm_output(folder_path = "data/sbm_output_brca_cptac/brca_nsbm_tests_medium", 
+#                                 level = 0, 
+#                                 omics_layers = 3)
+
+brca_medium_l1 <- read_sbm_output(folder_path = "data/sbm_output_brca_cptac/brca_nsbm_tests_medium", 
+                                 level = 1, 
+                                 omics_layers = 3)
+
+brca_medium_l2 <- read_sbm_output(folder_path = "data/sbm_output_brca_cptac/brca_nsbm_tests_medium", 
+                                 level = 2, 
+                                 omics_layers = 3)
+
+```
+
+```{r}
+t(as.data.frame(brca_medium_l1$summary))
+t(as.data.frame(brca_medium_l2$summary))
+```
+
+```{r}
+#sankey plot l1 & l2
+
+brca_samp <- as.list(brca_cluster$Sample.ID)
+
+#using level 1 & 2 in this case
+l1 <- unlist(lapply(brca_samp, function(samp) {which(brca_medium_l1$clust == samp, arr.ind = TRUE)[2]}))
+l2 <- unlist(lapply(brca_samp, function(samp) {which(brca_medium_l2$clust == samp, arr.ind = TRUE)[2]}))
+
+
+#add the prviously published annotation "NMF.Cluster"
+df <- data.frame("level_2" = l2, "level_1" = l1, "brca_subgroup" = brca_cluster$NMF.Cluster, row.names = brca_cluster$Sample.ID)
+df_s <- get_sankey_input(df)
+p <- sankeyNetwork(Links = df_s$links, Nodes = df_s$nodes,
+                     Source = "IDsource", Target = "IDtarget",
+                     Value = "value", NodeID = "name", 
+                     sinksRight=FALSE)
+
+
+p
+
+```
+
+```{r}
+#barplot level 1
+
+df <- get_nsbmclust_df(brca_medium_l1$clust, anno = brca_cluster, anno_samplecol = 1, anno_groupcol = 8)
+
+df$cluster <- rownames(df)
+df <- melt(df, id = "cluster")
+
+ggplot(df, aes(fill=variable, y=value, x=cluster)) + 
+    geom_bar(position="stack", stat="identity")
+
+
+```
+
+### Medium size data without phosph0 (4k RNA, 2k Prot)
+
+```{r}
+#brca_medium_noPhos_l0 <- read_sbm_output(folder_path = "data/sbm_output_brca_cptac/brca_nsbm_tests_medium_noPhos", 
+#                                 level = 0, 
+#                                 omics_layers = 2)
+
+brca_medium_noPhos_l1 <- read_sbm_output(folder_path = "data/sbm_output_brca_cptac/brca_nsbm_tests_medium_noPhos", 
+                                 level = 1, 
+                                 omics_layers = 2)
+
+brca_medium_noPhos_l2 <- read_sbm_output(folder_path = "data/sbm_output_brca_cptac/brca_nsbm_tests_medium_noPhos", 
+                                 level = 2, 
+                                 omics_layers = 2)
+
+```
+
+```{r}
+t(as.data.frame(brca_medium_noPhos_l1$summary))
+t(as.data.frame(brca_medium_noPhos_l2$summary))
+```
+
+```{r}
+#sankey plot l1 & l2
+
+brca_samp <- as.list(brca_cluster$Sample.ID)
+
+#using level 1 & 2 in this case
+l1 <- unlist(lapply(brca_samp, function(samp) {which(brca_medium_noPhos_l1$clust == samp, arr.ind = TRUE)[2]}))
+l2 <- unlist(lapply(brca_samp, function(samp) {which(brca_medium_noPhos_l2$clust == samp, arr.ind = TRUE)[2]}))
+
+
+#add the prviously published annotation "NMF.Cluster"
+df <- data.frame("level_2" = l2, "level_1" = l1, "brca_subgroup" = brca_cluster$NMF.Cluster, row.names = brca_cluster$Sample.ID)
+df_s <- get_sankey_input(df)
+p <- sankeyNetwork(Links = df_s$links, Nodes = df_s$nodes,
+                     Source = "IDsource", Target = "IDtarget",
+                     Value = "value", NodeID = "name", 
+                     sinksRight=FALSE)
+
+
+p
+
+```
+
+```{r}
+#barplot level 1
+
+df <- get_nsbmclust_df(brca_medium_noPhos_l1$clust, anno = brca_cluster, anno_samplecol = 1, anno_groupcol = 8)
+
+df$cluster <- rownames(df)
+df <- melt(df, id = "cluster")
+
+ggplot(df, aes(fill=variable, y=value, x=cluster)) + 
+    geom_bar(position="stack", stat="identity")
+
+
+```
+
+### Further analysis for any multi-omics integration analysis level of interest
+
+```{r}
+#define omics type and matching level of interest
+loi <- brca_medium_noPhos_l1
+number_omics <- 2
+
+loi_name <- "nSBM l=1 brca medium no phospho"
+```
+
+Calculate the rand index:
+
+```{r}
+df <- get_nsbmclust_df(loi$clust, anno = brca_cluster, anno_samplecol = 1, anno_groupcol = 8)
+rand_index_sbmcluster(df)
+```
+
+Take a closer look at topics by using the analyse_topics function which
+calculates different normalisations for topic scores, specifiying the
+number of omics layers.
+
+```{r}
+stats_loi <- analyse_topics(loi, omics_layers = number_omics)
+
+```
+
+Check the centered topic values aka "importance" for each each topic
+using the SBM assigned clustering. Since they are different topics for
+each omics layer, they are different topics for each layer. Centered
+topic values per cluster are calculated according to this publication:
+<https://www.mdpi.com/2072-6694/16/7/1350>.
+
+```{r}
+ggplot(stats_loi$rna$info_centered, aes(x=cluster, y=value))+
+  geom_boxplot() +
+  geom_point(aes(group = factor(cluster), color=topic_length), show.legend = T, size = 2) +
+  labs(x="", y="Centered topic importance", title = paste("Results", loi_name, ", RNA topics")) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+ggplot(stats_loi$prot$info_centered, aes(x=cluster, y=value))+
+  geom_boxplot() +
+  geom_point(aes(group = factor(cluster), color=topic_length), show.legend = T, size = 2) +
+  labs(x="", y="Centered topic importance", title = paste("Results", loi_name, ", Proteomics topics")) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+if (number_omics == 3) {
+  ggplot(stats_loi$phos$info_centered, aes(x=cluster, y=value))+
+  geom_boxplot() +
+  geom_point(aes(group = factor(cluster), color=topic_length), show.legend = T, size = 2) +
+  labs(x="", y="Centered topic importance", title = paste("Results", loi_name, ", Phospho topics")) +
+  theme(plot.title = element_text(hjust = 0.5))
+}
+
+```
+
+Check correlation between centered topic importance and topic length, vs
+correlation when only mean topic importance without centering.
+
+```{r}
+cluster <- unique(stats_loi$rna$info_centered$cluster)
+
+
+for (cl in cluster) {
+  p <- ggplot(stats_loi$rna$info_centered[stats_loi$rna$info_centered$cluster==cl,], aes(x=value, y=topic_length)) +
+    geom_point() +
+    labs(x="Centered topic importance", y="Topic size", title = paste("Results",loi_name, cl, "RNA Topics")) +
+    geom_smooth(method='lm', formula= y~x) +
+    theme(plot.title = element_text(hjust = 0.5))
+    print(p)
+  
+  l <- ggplot(stats_loi$prot$info_centered[stats_loi$prot$info_centered$cluster==cl,], aes(x=value, y=topic_length)) +
+    geom_point() +
+    labs(x="Centered topic importance", y="Topic size", title = paste("Results",loi_name, cl, "Proteomics Topics")) +
+    geom_smooth(method='lm', formula= y~x) +
+    theme(plot.title = element_text(hjust = 0.5))
+  print(l)
+  
+  
+  if (number_omics == 3) {
+   o <- ggplot(stats_loi$phos$info_centered[stats_loi$phos$info_centered$cluster==cl,], aes(x=value, y=topic_length)) +
+    geom_point() +
+    labs(x="Centered topic importance", y="Topic size", title = paste("Results",loi_name, cl, "Phospho Topics")) +
+    geom_smooth(method='lm', formula= y~x) +
+    theme(plot.title = element_text(hjust = 0.5))
+  }
+} 
+
+
+
+ggplot(stats_loi$rna$info_centered, aes(x=topic_mean_imp, y=topic_length)) +
+    geom_point() +
+    labs(x="Mean topic importance", y="Topic size", title = paste("Results", loi_name, ", RNA Topics")) +
+    geom_smooth(method='lm', formula= y~x) +
+    theme(plot.title = element_text(hjust = 0.5))
+
+ggplot(stats_loi$prot$info_centered, aes(x=topic_mean_imp, y=topic_length)) +
+    geom_point() +
+    labs(x="Mean topic importance", y="Topic size", title = paste("Results", loi_name, ", Proteomics Topics")) +
+    geom_smooth(method='lm', formula= y~x) +
+    theme(plot.title = element_text(hjust = 0.5))
+
+if (number_omics == 3) {
+  ggplot(stats_loi$phos$info_centered, aes(x=topic_mean_imp, y=topic_length)) +
+    geom_point() +
+    labs(x="Mean topic importance", y="Topic size", title = paste("Results", loi_name, ", Phospho Topics")) +
+    geom_smooth(method='lm', formula= y~x) +
+    theme(plot.title = element_text(hjust = 0.5))
+}
+
+
+```
+
+Correlation value can also be simply calculated without visualization.
+
+```{r}
+topic_length_corr(stats_loi$rna)
+topic_length_corr(stats_loi$prot)
+# topic_length_corr(stats_loi$phos)
+```
+
+## Identify topics of interest
+
+This is a a simple way to identify topics of interest as specified in
+this publication: <https://www.mdpi.com/2072-6694/16/7/1350>.
+
+```{r}
+#for rna
+stats <- stats_loi$rna$info_all[,10:12]
+pheatmap(stats, main = paste(loi_name, ", RNA Topics"))
+
+m <- apply(stats, 2, mean)
+std <- apply(stats, 2, function(x){sqrt(var(x))})
+cl <- stats > m+2*std
+cl_rna <- rownames(cl)[rowSums(cl) != 0]
+
+pheatmap(stats[cl_rna,], main =  paste(loi_name, ", RNA Significant Topics"))
+
+#for proteomics
+stats <- stats_loi$prot$info_all[,10:12]
+pheatmap(stats, main = paste(loi_name, ", Proteomics Topics"))
+
+m <- apply(stats, 2, mean)
+std <- apply(stats, 2, function(x){sqrt(var(x))})
+cl <- stats > m+2*std
+cl_prot <- rownames(cl)[rowSums(cl) != 0]
+
+pheatmap(stats[cl_prot,], main =  paste(loi_name, ", Proteomics Significant Topics") )
+
+
+
+```
+
+Topics for each cluster can also be identified manually, depending on
+the results and number of overall Topics/ Clusters.
+
+```{r}
+todist_cut_rna <- brca_medium_noPhos_l1$todist_rna[,cl_rna]
+colnames(todist_cut_rna) <- paste0(colnames(todist_cut_rna), "_T") #adding T for transcriptomics and P for proteomics to distinguisch the different topics
+pheatmap(t(todist_cut_rna), annotation = brca_cluster[,c(7,8)])
+
+todist_cut_prot <- brca_medium_noPhos_l1$todist_prot[,cl_prot]
+colnames(todist_cut_prot) <- paste0(colnames(todist_cut_prot), "_P")
+pheatmap(t(todist_cut_prot), annotation = brca_cluster[,c(7,8)])
+
+todist_c <- cbind(todist_cut_prot, todist_cut_rna)
+colnames(todist_c) <- paste0(str_remove(colnames(todist_c), "_.*$"), str_extract(colnames(todist_c), "_."))
+
+pheatmap(t(todist_c), annotation = brca_cluster[,c(7,8)], treeheight_row = 0, show_colnames = FALSE)
+```
+
+```{r}
+sessionInfo()
+```
