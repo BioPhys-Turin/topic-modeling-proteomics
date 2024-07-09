@@ -7,8 +7,7 @@ and the nSBM implementation (multi-omics) by the Biophys Turin group
 
 
 Gerlach, M., Peixoto, T. P., & Altmann, E. G. (2018). A network approach to topic models. Science Advances, 4(7), eaaq1360. https://doi.org/10.1126/sciadv.aaq1360
-
-Get second citation
+Valle, F., Osella, M., & Caselle, M. (2022). Multiomics topic modeling for breast cancer classification. Cancers, 14(5), 1150. https://doi.org/10.3390/cancers14051150
 
 Data used in this work is the pulic CPTAC data set available via the python package cptac https://pypi.org/project/cptac/, it includes bulk transcriptomics,
 proteomics & phosphoproteomics datasets as well as extensice clinical data for 11 cancer types. In the code here only uses the Breast Cancer cohort 
@@ -20,9 +19,10 @@ like in this case for the breast cancer (https://www.cell.com/cell/fulltext/S009
 1. Preprocessing (R markdown)
 2. Run SBM analysis, nSBM & hSBM (Python, needs to be done on computing cluster, min of 30gb ram required)
 3. Readout of all results, visualisation (R markdown)
-4. Further investigation of results (R markdown)
 
-The results are provided, so if you don't want/ can't run the analysis, you can directly start with the script 3 without having to install anything additional to the R packages specified in the markdown.
+
+Data and results can be downloaded here:?
+Since the results are provided, if you don't want/ can't run the SBM analysis itself, you can directly start with the script 3 without having to install anything additional to the R packages specified in the markdown.
 Still, make sure to check out script 1 with preprocessing script first, to properly understand the input data and matching results.
 
 ## Set Up SBM
@@ -39,7 +39,7 @@ conda install -c conda-forge nsbm #nsbm requirements
 ```
 
 Make sure to additionally download the hSBM code base from here `git clone https://github.com/martingerlach/hSBM_Topicmodel.git` 
-(theoretically it is contained in the nsbm python package but i haven't tested it so lets just be safe). 
+(theoretically it is contained in the nsbm python package, but i haven't tested it so lets just be safe). 
 
 R requirements ? should I add a txt with all the info?
 
