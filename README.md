@@ -7,6 +7,7 @@ and the nSBM implementation (multi-omics) by the Biophys Turin group
 
 
 Gerlach, M., Peixoto, T. P., & Altmann, E. G. (2018). A network approach to topic models. Science Advances, 4(7), eaaq1360. https://doi.org/10.1126/sciadv.aaq1360
+
 Valle, F., Osella, M., & Caselle, M. (2022). Multiomics topic modeling for breast cancer classification. Cancers, 14(5), 1150. https://doi.org/10.3390/cancers14051150
 
 Data used in this work is the pulic CPTAC data set available via the python package cptac https://pypi.org/project/cptac/, it includes bulk transcriptomics,
@@ -23,7 +24,7 @@ like in this case for the breast cancer (https://www.cell.com/cell/fulltext/S009
 
 Data and results can be downloaded here:?
 Since the results are provided, if you don't want/ can't run the SBM analysis itself, you can directly start with the script 3 without having to install anything additional to the R packages specified in the markdown.
-Still, make sure to check out script 1 with preprocessing script first, to properly understand the input data and matching results.
+Still, make sure to check out script 01 with the preprocessing first, to properly understand the input data and matching results.
 
 ## Set Up SBM
 
