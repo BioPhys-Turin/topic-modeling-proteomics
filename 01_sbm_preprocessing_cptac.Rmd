@@ -1,0 +1,198 @@
+---
+title: "Preprocessing data for SBM analysis: CPTAC (BRCA) data"
+author: "Anne-Claire Kroger, anne-claire.kroger@curie.fr"
+date: "2024-06-17"
+output: html_document
+---
+
+# 1. Cleaning & preprocessing of CPATC data
+
+Initial Script to clean and preprocess the CPTAC brest cancer data available here <https://pypi.org/project/cptac/>. This script only includes the breast cancer cohort, but functions can be used for all cptac cohorts.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(Matrix)
+library(dplyr)
+library(org.Hs.eg.db)
+library(stringr)
+library(pheatmap)
+library(reshape2)
+library(ggplot2)
+library(matrixStats)
+
+source("sbm_preprocessing_functions.R")
+
+```
+
+## Import data
+
+```{r}
+#brca
+
+#read
+brca_meta <- read.delim("data/input_brca_cptac/BRCA_meta.txt")
+brca_meta <- brca_meta[-1,]
+brca_cluster <- read.csv("data/input_brca_cptac/BRCA_meta_paper_clustering.csv")
+
+brca_rna <- read.delim("data/input_brca_cptac/BRCA_RNAseq_gene_RSEM_coding_UQ_1500_log2_Tumor.txt") 
+brca_phospho <- read.delim("data/input_brca_cptac/BRCA_phospho_site_abundance_log2_reference_intensity_normalized_Tumor.txt")
+brca_proteo <- read.delim("data/input_brca_cptac/BRCA_proteomics_gene_abundance_log2_reference_intensity_normalized_Tumor.txt")
+
+```
+
+## Annotated & clean data
+
+```{r}
+#remove some problematic samples
+samp <- colnames(brca_rna)[-1]
+samp <- samp[samp != "X01BR044" & samp != "X604"]
+
+#annotation of ensemble ID & filtering for protein coding
+brca_rna <- brca_rna %>%
+  annotate_cptac  %>%
+  clean_annotated_cptac %>%
+  prep_nsbm(samples = samp)
+
+brca_proteo <- brca_proteo %>%
+  annotate_cptac %>%
+  clean_annotated_cptac %>%
+  prep_nsbm(samples = samp, shift = TRUE)
+
+brca_phospho <- brca_phospho %>%
+  annotate_cptac(phospho = TRUE) %>%
+  clean_annotated_cptac(phospho = TRUE) %>%
+  prep_nsbm(samples = samp, shift = TRUE)
+
+#reformat metadata
+rownames(brca_cluster) <- brca_cluster$Sample.ID
+brca_cluster <- brca_cluster[samp,]
+brca_cluster <- brca_cluster[,c(1,7,8)]
+
+#write.csv(brca_cluster, "data/sbm_input_brca_cptac/brca_cluster_119s_nsbmprep.csv")
+
+```
+
+## Prep for SBM algorithm
+
+Computational time in SBM will increase with larger values, so we remove smaller values by dividing, the algorithm will round automatically as it doesn't take decimals. (This is because all topic modelling algorithms are based on the premise of word counts per document.) A higher number of features also increases computation, so we choose features with the most variance. It is also possible to run nSBM with all features, but especially with nSBM integration, a smaller and more balanced number off features across all omics layers is key.
+
+Additionally, all NA values moust be set to 0, features containing only 0s must be filtered out beforehand, as they will be unconnected in the network. Make also sure that feature names are unique, here the ending "\_P" or "\_R" is added to the gene/ protein name.
+
+### RNA
+
+```{r}
+#divide and remove 0s 
+brca_rna <- round(brca_rna/100)
+brca_rna <- brca_rna[rowSums(brca_rna, na.rm = TRUE) != 0,]
+
+#change name
+rownames(brca_rna) <- str_c(rownames(brca_rna), "_R")
+
+#highly variable proteins
+sorted_rna <- order(rowVars(as.matrix(log2(brca_rna)), na.rm = TRUE), decreasing = TRUE)
+brca_rna_2000 <- brca_rna[sorted_rna[1:2000],]
+brca_rna_4000 <- brca_rna[sorted_rna[1:4000],]
+brca_rna_8000 <- brca_rna[sorted_rna[1:8000],]
+
+#save data
+# write.csv(brca_rna_2000, "data/sbm_input_brca_cptac/brca_rna_119s_hsbmprep_2k.csv")
+# write.csv(brca_rna_4000, "data/sbm_input_brca_cptac/brca_rna_119s_hsbmprep_4k.csv")
+# write.csv(brca_rna_8000, "data/sbm_input_brca_cptac/brca_rna_119s_hsbmprep_8k.csv")
+
+```
+
+The distribution of the feature value means should theoretically be close to a power law distribution.
+
+```{r}
+#check the distribution of feature value means
+rna_dist <- apply(brca_rna_4000, 1, mean, na.rm = TRUE)
+rna_hist <- hist(rna_dist, breaks=100)
+
+#check for a power law distribution
+plot(log(rna_hist$breaks[1:length(rna_hist$counts)]+1), log(rna_hist$counts+1))
+```
+
+The distribution doesn't look amazing, but that's ok... Deviation from this distribution is especially crucial in low quality phosphoproteomics data, as the SBM algorithm will not run if the deviation is too strong.
+
+
+### Proteomics
+
+```{r}
+#divide, round and check for missing values
+brca_prot <- round(brca_proteo/1000)
+brca_prot[is.na(brca_prot)] <- 0
+
+#remove everything with more then 30% missing values
+brca_prot <- brca_prot[rowSums(brca_prot == 0) < round(0.3*dim(brca_prot)[2]),]
+brca_prot[brca_prot == 0] <- NA
+
+#change names
+rownames(brca_prot) <- str_c(rownames(brca_prot), "_P")
+
+#highly variable proteins
+sorted_prot <- order(rowVars(as.matrix(log2(brca_prot)), na.rm = TRUE), decreasing = TRUE)
+brca_prot_1000 <- brca_prot[sorted_prot[1:1000],]
+brca_prot_2000 <- brca_prot[sorted_prot[1:2000],]
+brca_prot_4000 <- brca_prot[sorted_prot[1:4000],]
+
+#save data
+# write.csv(brca_prot_1000, "data/sbm_input_brca_cptac/brca_prot_119s_hsbmprep_1k.csv")
+# write.csv(brca_prot_2000, "data/sbm_input_brca_cptac/brca_prot_119s_hsbmprep_2k.csv")
+# write.csv(brca_prot_4000, "data/sbm_input_brca_cptac/brca_prot_119s_hsbmprep_4k.csv")
+
+
+```
+
+```{r}
+#check the distribution of feature value means
+prot_dist <- apply(brca_prot_2000, 1, mean, na.rm = TRUE)
+prot_hist <- hist(prot_dist, breaks=100)
+
+#check for a power law distribution
+plot(log(prot_hist$breaks[1:length(prot_hist$counts)]+1), log(prot_hist$counts+1))
+```
+
+
+### Phosphoproteomics
+
+```{r}
+#divide, round and check for missing values
+brca_phospho <- round(brca_phospho/1000)
+brca_phospho[is.na(brca_phospho)] <- 0
+
+#remove everything with more then 50% missing values
+brca_phospho_11k <- brca_phospho[rowSums(brca_phospho == 0) < round(0.5*dim(brca_phospho)[2]),]
+brca_phospho_11k[brca_phospho_11k == 0] <- NA
+
+#save data 11k subset
+# write.csv(brca_phospho_11k, "data/sbm_input_brca_cptac/brca_phos_119s_hsbmprep_11k.csv")
+
+#remove everything with more then 30% missing values
+brca_phospho_8k <- brca_phospho[rowSums(brca_phospho == 0) < round(0.3*dim(brca_phospho)[2]),]
+brca_phospho_8k[brca_phospho_8k == 0] <- NA
+
+#save data 8k subset
+# write.csv(brca_phospho_8k, "data/sbm_input_brca_cptac/brca_phos_119s_hsbmprep_8k.csv")
+
+#highly variable phosphosites
+sorted_phospho <- order(rowVars(as.matrix(log2(brca_phospho_8k)), na.rm = TRUE), decreasing = TRUE)
+brca_phospho_4k<- brca_phospho_8k[sorted_phospho[1:4000],]
+
+#save data 4k subset
+# write.csv(brca_phospho_4k, "data/sbm_input_brca_cptac/brca_phos_119s_hsbmprep_4k.csv")
+```
+
+```{r}
+#check the distribution of feature value means
+phos_dist <- apply(brca_phospho_8k, 1, mean, na.rm = TRUE)
+phos_hist <- hist(phos_dist, breaks=100)
+
+#check for a power law distribution
+plot(log(phos_hist$breaks[1:length(phos_hist$counts)]+1), log(phos_hist$counts+1))
+```
+
+```{r}
+sessionInfo()
+```
+
